@@ -10,7 +10,7 @@ Think: "Pocket meets Notion" but focused on speed for MVP.
 ## Tech Stack
 - **Frontend**: React + Vite + TailwindCSS
 - **Backend**: Firebase Firestore for data + Auth
-- **Auth**: Firebase Anonymous Auth for instant access
+- **Auth**: Firebase Email and Password Auth 
 - **Deploy**: Vercel/Netlify ready
 ## MVP Sprint Scope
 ### 1. Core Features
@@ -23,7 +23,7 @@ Think: "Pocket meets Notion" but focused on speed for MVP.
 | Filter | Filter by category | ✅ Done |
 | CRUD | Create, Read, Update, Delete resources | ✅ Done |
 ### 2. User Flow
-1. Open app → Anonymous login happens automatically
+1. Open app → User signs in or signs up with email and password
 2. Click "Add Resource" → Fill form → Save
 3. View all resources in grid/list
 4. Use search bar or category filter to find items
@@ -35,7 +35,7 @@ Think: "Pocket meets Notion" but focused on speed for MVP.
 - Firebase project
 ### 2. Firebase Setup
 1. Create project at console.firebase.google.com
-2. Enable Authentication → Anonymous sign-in
+2. Enable Authentication → Email and password sign-in
 3. Enable Firestore Database → Start in test mode
 4. Copy config and paste in `src/firebase.js`
 ### 3. Install & Run
