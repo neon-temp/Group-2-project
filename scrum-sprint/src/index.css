@@ -7,31 +7,73 @@ body { @apply bg-slate-900 text-white; }
 
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-stash-bg: #0b1120;
-  --color-stash-surface: #151d2e;
-  --color-stash-elevated: #1e293b;
-  --color-stash-border: #334155;
-  --color-stash-accent: #6366f1;
-  --color-stash-accent-hover: #4f46e5;
-  --color-stash-muted: #94a3b8;
-  --color-stash-subtle: #64748b;
-  --color-stash-tag: #312e81;
-  --color-stash-tag-text: #c7d2fe;
+@layer base {
+  :root {
+    --stash-bg: #f8f9fa;
+    --stash-surface: #ffffff;
+    --stash-elevated: #f1f3f5;
+    --stash-border: #e9ecef;
+    --stash-subtle: #adb5bd;
+    --stash-muted: #6c757d;
+    --stash-text: #212529;
+    --stash-accent: #4f46e5;
+    --stash-accent-hover: #4338ca;
+    --stash-tag: #e0e7ff;
+    --stash-tag-text: #4338ca;
+  }
 }
 
-@layer base {
-  body {
-    @apply bg-stash-bg text-slate-100 font-sans antialiased;
+@layer components {
+  .bg-stash-bg {
+    background-color: var(--stash-bg);
   }
+  .bg-stash-surface {
+    background-color: var(--stash-surface);
+  }
+  .bg-stash-elevated {
+    background-color: var(--stash-elevated);
+  }
+  .border-stash-border {
+    border-color: var(--stash-border);
+  }
+  .text-stash-subtle {
+    color: var(--stash-subtle);
+  }
+  .text-stash-muted {
+    color: var(--stash-muted);
+  }
+  .text-stash-text {
+    color: var(--stash-text);
+  }
+  .bg-stash-accent {
+    background-color: var(--stash-accent);
+  }
+  .hover\:bg-stash-accent-hover:hover {
+    background-color: var(--stash-accent-hover);
+  }
+  .text-stash-accent {
+    color: var(--stash-accent);
+  }
+  .bg-stash-tag {
+    background-color: var(--stash-tag);
+  }
+  .text-stash-tag-text {
+    color: var(--stash-tag-text);
+  }
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
 
-  input,
-  textarea,
-  select,
-  button {
-    @apply text-sm;
-  }
+input,
+textarea,
+select,
+button {
+  @apply text-sm;
 }
 
 @layer utilities {
