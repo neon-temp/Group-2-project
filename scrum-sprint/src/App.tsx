@@ -1,337 +1,585 @@
-import { useEffect, useState, useMemo } from 'react'
-import { db, auth } from './firebase'
-import {
-  collection, addDoc, query, orderBy, deleteDoc, doc, onSnapshot, setDoc
-} from 'firebase/firestore'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
-import type { User } from 'firebase/auth'
+import { useState, useMemo } from 'react'
+import { useStashData } from './stashData'
+import type { Resource, ResourceForm } from './stashData'
+import ResourceDetail from './resourceDetail'
+import Categories from './categories'
+import Tags from './tags'
+import AddResourceModal from './addResource'
+import AuthScreen from './authScreen'
+import folderEmpty from './assets/folder-empty.png'
+import iconLibrary from './assets/icon-library.png'
+import iconCategories from './assets/icon-categories.png'
+import iconTags from './assets/icon-tags.png'
 
-const DEFAULT_CATEGORIES = ['Design', 'Development', 'Research', 'Personal']
+// ── Types ──────────────────────────────────────────────────────────────────
+type FilterTab = 'all' | 'links' | 'snippets'
+type NavItem = 'library' | 'categories' | 'tags' | 'settings'
 
-type Resource = {
-  id: string
-  title: string
-  url: string
-  text: string
-  category: string
-  tags: string[]
-  savedAt: string
-  type: 'url' | 'text' | 'image'
-  readTime?: string
-  format?: string
+// ── Helpers ────────────────────────────────────────────────────────────────
+const CATEGORY_COLORS: Record<string, string> = {
+  general:     'bg-gray-100 text-gray-600',
+  work:        'bg-blue-100 text-blue-700',
+  learning:    'bg-purple-100 text-purple-700',
+  tools:       'bg-teal-100 text-teal-700',
+  inspiration: 'bg-orange-100 text-orange-700',
+  design:      'bg-blue-100 text-blue-700',
+  development: 'bg-teal-100 text-teal-700',
+  research:    'bg-purple-100 text-purple-700',
+  personal:    'bg-red-100 text-red-600',
+  productivity:'bg-green-100 text-green-700',
 }
 
-type ResourceType = 'url' | 'text' | 'image'
-
-const ICONS = {
-  library: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" /></svg>,
-  categories: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>,
-  tags: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>,
-  settings: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
-  back: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
-  external: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>,
-  trash: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
-  edit: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
-  folder: <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
+function getCategoryColor(category: string): string {
+  return CATEGORY_COLORS[category.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
 }
 
-function AuthScreen() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLogin, setIsLogin] = useState(true)
-  const [error, setError] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    try {
-      if (isLogin) await signInWithEmailAndPassword(auth, email, password)
-      else await createUserWithEmailAndPassword(auth, email, password)
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message.replace('Firebase: ', ''))
-      } else {
-        setError('An unexpected error occurred')
-      }
-    }
+function getSource(resource: Resource): string {
+  if (resource.type === 'url' && resource.url) {
+    try { return new URL(resource.url).hostname.replace('www.', '') }
+    catch { return resource.url }
   }
+  return 'Text snippet'
+}
 
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch { return iso }
+}
+
+// ── Logo ───────────────────────────────────────────────────────────────────
+function StashLogo({ size = 32 }: { size?: number }) {
   return (
-    <div className="min-h-screen bg-stash-bg flex items-center justify-center p-4">
-      <div className="bg-stash-surface rounded-2xl p-8 w-full max-w-md border-stash-border">
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-stash-accent flex items-center justify-center text-white font-bold">S</div>
-          <h1 className="text-2xl font-bold">Stash</h1>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-stash-accent outline-none" />
-          <input type="password" required placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-stash-accent outline-none" />
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          <button className="w-full bg-stash-accent text-white py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover">{isLogin? 'Sign in' : 'Sign up'}</button>
-        </form>
-        <button onClick={() => setIsLogin(!isLogin)} className="w-full mt-4 text-sm text-stash-muted hover:text-stash-accent">{isLogin? "No account? Sign up" : 'Have account? Sign in'}</button>
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#3525CD" />
+      <rect x="12" y="20" width="40" height="9" rx="4.5" fill="#EDE9FE" />
+      <rect x="12" y="35" width="26" height="9" rx="4.5" fill="#EDE9FE" />
+    </svg>
+  )
+}
+
+// ── Icons ──────────────────────────────────────────────────────────────────
+function IconSettings() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </svg>
+  )
+}
+function IconSearch() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+    </svg>
+  )
+}
+function IconBell() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 01-3.46 0" />
+    </svg>
+  )
+}
+function IconEdit() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  )
+}
+function IconLink() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+    </svg>
+  )
+}
+function IconFile() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+    </svg>
+  )
+}
+function IconGrid() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+    </svg>
+  )
+}
+function IconList() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  )
+}
+function IconPlus() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+function IconCloud() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z" />
+    </svg>
+  )
+}
+function IconLightning() {
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+}
+function IconPlusCircle() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+      <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
+    </svg>
+  )
+}
+
+// ── Stat card ──────────────────────────────────────────────────────────────
+function StatCard({ label, value, sub, subColor = 'text-gray-500', accent }: {
+  label: string; value: string; sub: string; subColor?: string; accent: string
+}) {
+  return (
+    <div className="flex-1 bg-white rounded-xl border border-gray-200 px-5 py-4">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-bold text-gray-900">{value}</span>
+        <span className={`text-xs font-medium ${accent}`}>{sub}</span>
       </div>
+      {subColor !== 'text-gray-500' && <div className={`text-xs mt-0.5 ${subColor}`} />}
     </div>
   )
 }
 
-export default function App() {
-  const [user, setUser] = useState<User | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
-  const [resources, setResources] = useState<Resource[]>([])
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES)
-  const [view, setView] = useState<'dashboard' | 'resource' | 'categories'>('dashboard')
-  const [selectedResource, setSelectedResource] = useState<Resource | null>(null)
-  const [showSavePopup, setShowSavePopup] = useState(false)
-  const [search, setSearch] = useState('')
-
-  const [form, setForm] = useState({ title: '', url: '', text: '', category: 'Design', tags: '', type: 'url' as ResourceType })
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); if (!u) setResources([]) })
-    return unsub
-  }, [])
-
-  useEffect(() => {
-    if (!user) return
-    const unsubRes = onSnapshot(query(collection(db, `users/${user.uid}/resources`), orderBy('savedAt', 'desc')), snap => {
-      setResources(snap.docs.map(d => ({ id: d.id,...d.data() } as Resource)))
-    })
-    const catRef = doc(db, `users/${user.uid}/settings/categories`)
-    const unsubCat = onSnapshot(catRef, async snap => {
-      if (snap.exists()) setCategories(snap.data().names)
-      else await setDoc(catRef, { names: DEFAULT_CATEGORIES })
-    })
-    return () => { unsubRes(); unsubCat() }
-  }, )
-
-  const saveResource = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.title.trim()) return alert('Title required')
-    const data = { ...form, tags: form.tags.split(',').map(t => t.trim()).filter(Boolean), savedAt: new Date().toISOString() }
-    await addDoc(collection(db, `users/${user!.uid}/resources`), data)
-    setShowSavePopup(false)
-    setForm({ title: '', url: '', text: '', category: 'Design', tags: '', type: 'url' })
-  }
-
-  const deleteResource = async (id: string) => {
-    if (!confirm('Delete this resource?')) return
-    await deleteDoc(doc(db, `users/${user!.uid}/resources`, id))
-    setView('dashboard')
-  }
-
-  const addCategory = async (name: string) => {
-    const newCats = [...categories, name]
-    setCategories(newCats)
-    await setDoc(doc(db, `users/${user!.uid}/settings/categories`), { names: newCats })
-  }
-
-  const deleteCategory = async (name: string) => {
-    if (name === 'Design') return alert('Cannot delete default category')
-    const newCats = categories.filter(c => c !== name)
-    setCategories(newCats)
-    await setDoc(doc(db, `users/${user!.uid}/settings/categories`), { names: newCats })
-  }
-
-  const filtered = useMemo(() => {
-    if (!search) return resources
-    const q = search.toLowerCase()
-    return resources.filter(r => r.title.toLowerCase().includes(q) || r.tags.some(t => t.toLowerCase().includes(q)))
-  }, [resources, search])
-
-  const stats = {
-    total: resources.length,
-    categories: categories.length,
-    tags: [...new Set(resources.flatMap(r => r.tags))].length,
-    completion: resources.length > 0 ? Math.round((resources.filter(r => r.text).length / resources.length) * 100) : 0
-  }
-
-  if (authLoading) return <div className="min-h-screen bg-stash-bg flex items-center justify-center"><div className="w-8 h-8 border-2 border-stash-accent border-t-transparent rounded-full animate-spin" /></div>
-  if (!user) return <AuthScreen />
+// ── Resource card ──────────────────────────────────────────────────────────
+function ResourceCard({ resource, onClick, gridView }: { resource: Resource; onClick: () => void; gridView: boolean }) {
+  const categoryColor = getCategoryColor(resource.category)
+  const source = getSource(resource)
 
   return (
-    <div className="min-h-screen bg-stash-bg text-stash-text flex">
-      {/* Sidebar - Figma Dashboard */}
-      <aside className="w-64 bg-stash-surface border-r border-stash-border flex-col p-4 fixed h-full">
-        <div className="flex items-center gap-3 mb-8 px-2">
-          <div className="w-8 h-8 rounded-lg bg-stash-accent flex items-center justify-center text-white font-bold text-sm">S</div>
-          <span className="font-bold text-lg">Stash</span>
+    <div
+      className={`flex items-start justify-between py-5 border-b border-gray-100 last:border-0 group cursor-pointer hover:bg-gray-50 -mx-5 px-5 rounded-xl transition-colors ${gridView ? 'bg-white' : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex-1 min-w-0 pr-4">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="text-sm font-semibold text-gray-900 group-hover:text-brand transition-colors">
+            {resource.title}
+          </span>
+          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${categoryColor}`}>
+            {resource.category}
+          </span>
+        </div>
+        {resource.text && (
+          <p className="text-sm text-gray-500 leading-relaxed mb-2 line-clamp-2">{resource.text}</p>
+        )}
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span className="flex items-center gap-1">
+            {resource.type === 'text' ? <IconFile /> : <IconLink />}
+            {source}
+          </span>
+          {resource.tags.map(tag => (
+            <span key={tag} className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">#{tag}</span>
+          ))}
+        </div>
+      </div>
+      <button
+        className="text-gray-300 hover:text-gray-500 transition-colors mt-0.5 opacity-0 group-hover:opacity-100 shrink-0"
+        onClick={e => e.stopPropagation()}
+      >
+        <IconEdit />
+      </button>
+    </div>
+  )
+}
+
+// ── Loading skeleton ───────────────────────────────────────────────────────
+function Skeleton() {
+  return (
+    <div className="space-y-px">
+      {[1, 2, 3].map(i => (
+        <div key={i} className="py-5 border-b border-gray-100 animate-pulse">
+          <div className="flex gap-2 mb-2">
+            <div className="h-4 bg-gray-100 rounded w-1/3" />
+            <div className="h-4 bg-gray-100 rounded w-16" />
+          </div>
+          <div className="h-3 bg-gray-100 rounded w-full mb-1" />
+          <div className="h-3 bg-gray-100 rounded w-2/3" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Main Dashboard ─────────────────────────────────────────────────────────
+export default function Dashboard() {
+  const {
+    user, authLoading, logout,
+    resources, resourcesLoading, categories, stats,
+    addResource, updateResource, deleteResource,
+    addCategory, renameCategory, deleteCategory,
+  } = useStashData()
+
+  const [activeNav, setActiveNav] = useState<NavItem>('library')
+  const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
+  const [isGridView, setIsGridView] = useState(false)
+  const [search, setSearch] = useState('')
+  const [selectedResource, setSelectedResource] = useState<Resource | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [editingResource, setEditingResource] = useState<Resource | null>(null)
+
+  // Must be declared before any early returns to satisfy Rules of Hooks
+  const statCards = useMemo(() => {
+    const prevTotal = Math.max(stats.total - stats.recentlyAdded, 0)
+    const pctChange = prevTotal > 0 ? Math.round((stats.recentlyAdded / prevTotal) * 100) : 0
+    return { pctChange }
+  }, [stats.total, stats.recentlyAdded])
+
+  const STORAGE_LIMIT_GB = 100
+  const usedStorageMB = resources.length
+  const storageUsedPercent = Math.min(100, Math.round((usedStorageMB / (STORAGE_LIMIT_GB * 1024)) * 100))
+  const storageRemainingGB = Math.max(0, Number((STORAGE_LIMIT_GB - usedStorageMB / 1024).toFixed(3)))
+
+  // Auth / loading gates
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <StashLogo size={48} />
+          <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin mt-2" />
+        </div>
+      </div>
+    )
+  }
+  if (!user) return <AuthScreen />
+
+  // Filtered resources
+  const filtered = resources.filter(r => {
+    if (activeFilter === 'links' && r.type !== 'url') return false
+    if (activeFilter === 'snippets' && r.type !== 'text') return false
+    if (search) {
+      const q = search.toLowerCase()
+      const match = r.title.toLowerCase().includes(q) ||
+        r.url.toLowerCase().includes(q) ||
+        r.text.toLowerCase().includes(q) ||
+        r.tags.some(t => t.toLowerCase().includes(q))
+      if (!match) return false
+    }
+    return true
+  })
+
+  // Handlers
+  const openAddModal = () => { setEditingResource(null); setShowAddModal(true) }
+  const openEditModal = (r: Resource) => { setEditingResource(r); setShowAddModal(true); setSelectedResource(null) }
+  const handleSave = async (form: ResourceForm) => {
+    if (editingResource) {
+      await updateResource(editingResource.id, form)
+    } else {
+      await addResource(form)
+    }
+    setShowAddModal(false)
+  }
+  const handleDelete = async (id: string) => {
+    await deleteResource(id)
+    setSelectedResource(null)
+  }
+
+  // CSS filter helpers for nav icons
+  const activeTint = 'brightness(0) saturate(100%) invert(18%) sepia(89%) saturate(3000%) hue-rotate(237deg) brightness(85%) contrast(110%)'
+  const dimFilter  = 'brightness(0) saturate(0%) opacity(45%)'
+
+  const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
+    {
+      id: 'library', label: 'Library',
+      icon: <img src={iconLibrary} alt="Library" width={20} height={20}
+              style={{ objectFit: 'contain', filter: activeNav === 'library' ? 'none' : dimFilter }} />,
+    },
+    {
+      id: 'categories', label: 'Categories',
+      icon: <img src={iconCategories} alt="Categories" width={20} height={20}
+              style={{ objectFit: 'contain', filter: activeNav === 'categories' ? activeTint : dimFilter }} />,
+    },
+    {
+      id: 'tags', label: 'Tags',
+      icon: <img src={iconTags} alt="Tags" width={20} height={20}
+              style={{ objectFit: 'contain', filter: dimFilter }} />,
+    },
+    { id: 'settings', label: 'Settings', icon: <IconSettings /> },
+  ]
+
+  return (
+    <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
+      {/* Modal */}
+      {showAddModal && (
+        <AddResourceModal
+          categories={categories}
+          editingResource={editingResource}
+          onSave={handleSave}
+          onClose={() => setShowAddModal(false)}
+        />
+      )}
+
+      {/* ── Sidebar ── */}
+      <aside className="w-56 flex flex-col bg-white border-r border-gray-200 shrink-0">
+        <div className="flex items-center gap-2.5 px-5 py-5 border-b border-gray-100">
+          <StashLogo size={32} />
+          <div>
+            <p className="text-sm font-bold text-gray-900 leading-tight">Stash</p>
+            <p className="text-[10px] text-gray-400">Personal Knowledge</p>
+          </div>
         </div>
 
-        <nav className="space-y-1 flex-1">
-          <button onClick={() => { setView('dashboard'); setSelectedResource(null) }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${view === 'dashboard'? 'bg-stash-accent/20 text-stash-accent' : 'hover:bg-stash-elevated text-stash-muted'}`}>
-            {ICONS.library} Library
-          </button>
-          <button onClick={() => setView('categories')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${view === 'categories'? 'bg-stash-accent/20 text-stash-accent' : 'hover:bg-stash-elevated text-stash-muted'}`}>
-            {ICONS.categories} Categories
-          </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stash-elevated text-stash-muted">{ICONS.tags} Tags</button>
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stash-elevated text-stash-muted">{ICONS.settings} Settings</button>
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveNav(item.id)
+                setSelectedResource(null)
+              }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                activeNav === item.id
+                  ? 'bg-brand-light text-brand font-medium'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
         </nav>
-        <button onClick={() => signOut(auth)} className="w-full bg-stash-accent text-white py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover mb-4">Sign Out</button>
 
-        <button onClick={() => setShowSavePopup(true)} className="w-full bg-stash-accent text-white py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover mb-4">+ Add Resource</button>
-        <div className="text-xs text-stash-subtle px-2">Storage Status: {stats.total} items</div>
+        <div className="px-4 py-4 border-t border-gray-100 space-y-4">
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+              <span>Storage used</span>
+              <span>{usedStorageMB} MB / {STORAGE_LIMIT_GB} GB</span>
+            </div>
+            <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${storageUsedPercent > 90 ? 'bg-red-500' : storageUsedPercent > 70 ? 'bg-yellow-500' : 'bg-brand'}`}
+                style={{ width: `${storageUsedPercent}%` }}
+              />
+            </div>
+            <p className="mt-2 text-[11px] text-gray-500">{storageRemainingGB} GB remaining</p>
+          </div>
+          <button
+            onClick={openAddModal}
+            className="w-full flex items-center justify-center gap-2 bg-stash-accent text-white py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover mb-4"
+          >
+            <IconPlus />
+            Add Resource
+          </button>
+          <div>
+            <div className="flex items-center gap-1 text-xs text-gray-400 mb-1.5">
+              <IconCloud />
+              <span>{user.email}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="text-xs text-blue-600 hover:text-gray-700 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
       </aside>
 
-      <main className="ml-64 flex-1 p-8 overflow-y-auto h-screen">
-        
-        {/* 1. DASHBOARD - Figma Screen 1 */}
-        {view === 'dashboard' && (
+      {/* ── Main ── */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Categories view */}
+        {activeNav === 'categories' && (
+          <Categories
+            categories={categories}
+            resources={resources}
+            onAddCategory={addCategory}
+            onRenameCategory={renameCategory}
+            onDeleteCategory={deleteCategory}
+          />
+        )}
+
+        {/* Tags view */}
+        {activeNav === 'tags' && (
+          <Tags resources={resources} />
+        )}
+
+        {/* Resource detail */}
+        {activeNav === 'library' && selectedResource && (
+          <ResourceDetail
+            resource={selectedResource}
+            onBack={() => setSelectedResource(null)}
+            onEdit={openEditModal}
+            onDelete={handleDelete}
+          />
+        )}
+
+        {/* Settings view */}
+        {activeNav === 'settings' && (
+          <div className="flex-1 flex items-center justify-center px-6 py-8 bg-gray-50">
+            <div className="w-full max-w-xl rounded-3xl border border-gray-200 bg-white p-10 text-center shadow-sm">
+              <h1 className="text-2xl font-bold text-gray-900 mb-3">Settings</h1>
+              <p className="text-sm text-gray-500">Settings are coming soon. Manage your account and workspace preferences here.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Library list */}
+        {activeNav === 'library' && !selectedResource && (
           <>
-            {/* Stats Row */}
-            <div className="grid grid-cols-4 gap-4 mb-8">
-              <div className="bg-stash-surface border-stash-border rounded-xl p-5"><p className="text-stash-muted text-sm mb-1">Total Resources</p><p className="text-3xl font-bold">{stats.total.toLocaleString()}</p></div>
-              <div className="bg-stash-surface border-stash-border rounded-xl p-5"><p className="text-stash-muted text-sm mb-1">Categories</p><p className="text-3xl font-bold">{stats.categories}</p></div>
-              <div className="bg-stash-surface border-stash-border rounded-xl p-5"><p className="text-stash-muted text-sm mb-1">Tags Used</p><p className="text-3xl font-bold">{stats.tags}</p></div>
-              <div className="bg-stash-surface border-stash-border rounded-xl p-5"><p className="text-stash-muted text-sm mb-1">Completion</p><p className="text-3xl font-bold">{stats.completion}%</p></div>
-            </div>
-
-            {/* Search + Sort */}
-            <div className="flex gap-3 mb-6">
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources..." className="flex-1 bg-stash-surface border-stash-border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-stash-accent outline-none" />
-              <select className="bg-stash-surface border-stash-border rounded-lg px-4 py-2.5"><option>Sort by Date</option></select>
-            </div>
-
-            {/* Resource List or Empty State */}
-            {filtered.length === 0 ? (
-              // 3. EMPTY STATE - Figma Screen 3
-              <div className="bg-stash-surface border-stash-border rounded-xl p-16 text-center">
-                <div className="text-stash-subtle mb-4 flex justify-center">{ICONS.folder}</div>
-                <h3 className="text-xl font-semibold mb-2">Your library is empty</h3>
-                <p className="text-stash-muted mb-6">You haven't saved any resources yet. Add your first link, snippet, or image to get started.</p>
-                <button onClick={() => setShowSavePopup(true)} className="bg-stash-accent text-white px-6 py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover">Add Resource</button>
+            <header className="flex items-center gap-4 px-6 py-4 bg-white border-b border-gray-200">
+              <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand-light transition-all">
+                <IconSearch />
+                <input
+                  className="bg-transparent outline-none flex-1 text-gray-700 placeholder:text-gray-400 text-sm"
+                  placeholder="Search across your library..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
               </div>
-            ) : (
-              <div className="space-y-3">
-                {filtered.map(r => (
-                  <div key={r.id} onClick={() => { setSelectedResource(r); setView('resource') }} className="bg-stash-surface border-stash-border rounded-xl p-5 hover:border-stash-accent cursor-pointer transition-all">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold mb-1">{r.title}</h3>
-                        <p className="text-sm text-stash-muted line-clamp-2 mb-2">{r.text || r.url}</p>
-                        <div className="flex gap-2 items-center text-xs text-stash-subtle">
-                          <span className="bg-stash-elevated px-2 py-0.5 rounded">{r.category}</span>
-                          <span>{new Date(r.savedAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 opacity-0 hover:opacity-100">
-                        <button onClick={e => { e.stopPropagation(); setSelectedResource(r); setView('resource') }} className="text-stash-accent text-sm">{ICONS.edit}</button>
-                        <button onClick={e => { e.stopPropagation(); deleteResource(r.id) }} className="text-red-400 text-sm">{ICONS.trash}</button>
-                      </div>
-                    </div>
+              <button className="text-gray-400 hover:text-gray-700 transition-colors p-1">
+                <IconBell />
+              </button>
+            </header>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Stat cards */}
+              <div className="flex gap-4">
+                <StatCard
+                  label="Total Resources"
+                  value={String(stats.total)}
+                  sub={statCards.pctChange > 0 ? `+${statCards.pctChange}%` : ''}
+                  accent="text-green-600"
+                  subColor="text-green-600"
+                />
+                <StatCard
+                  label="Recently Added"
+                  value={String(stats.recentlyAdded)}
+                  sub="This week"
+                  accent="text-brand"
+                />
+                <StatCard
+                  label="Uncategorized"
+                  value={String(stats.uncategorized)}
+                  sub={stats.uncategorized > 0 ? 'Needs attention' : 'All organised'}
+                  accent={stats.uncategorized > 0 ? 'text-red-500' : 'text-green-600'}
+                  subColor={stats.uncategorized > 0 ? 'text-red-500' : 'text-gray-500'}
+                />
+                <StatCard
+                  label="Categories"
+                  value={String(categories.length)}
+                  sub="Active"
+                  accent="text-gray-500"
+                />
+              </div>
+
+              {/* Filter + view controls */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
+                  {(['all', 'links', 'snippets'] as FilterTab[]).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveFilter(tab)}
+                      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        activeFilter === tab
+                          ? 'bg-brand text-blue-600 shadow-sm'
+                          : 'text-gray-500 hover:text-white hover:bg-blue-600'
+                      }`}
+                    >
+                      {tab === 'all' ? 'All Resources' : tab === 'links' ? 'Links' : 'Snippets'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400 border border-gray-200 bg-white rounded-lg px-3 py-1.5">
+                    Sort by: Date
+                  </span>
+                  <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setIsGridView(false)}
+                      className={`p-1.5 ${!isGridView ? 'bg-gray-100 text-gray-800' : 'bg-white text-gray-400 hover:bg-gray-50'}`}
+                    >
+                      <IconList />
+                    </button>
+                    <button
+                      onClick={() => setIsGridView(true)}
+                      className={`p-1.5 ${isGridView ? 'bg-gray-100 text-gray-800' : 'bg-white text-gray-400 hover:bg-gray-50'}`}
+                    >
+                      <IconGrid />
+                    </button>
                   </div>
-                ))}
+                </div>
               </div>
-            )}
-            <p className="text-center text-stash-subtle text-sm mt-8">Drop files or paste a link to add a resource</p>
+
+              {/* Resource list */}
+              <div className="bg-white rounded-xl border border-gray-200 px-5">
+                {resourcesLoading ? (
+                  <Skeleton />
+                ) : filtered.length > 0 ? (
+                  <div className={isGridView ? 'grid gap-4 sm:grid-cols-2' : 'space-y-0'}>
+                    {filtered.map(r => (
+                      <ResourceCard key={r.id} resource={r} onClick={() => setSelectedResource(r)} gridView={isGridView} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+                    <img src={folderEmpty} alt="Empty library" width={56} height={56} style={{ objectFit: 'contain' }} className="mb-5" />
+                    <h3 className="text-base font-semibold text-gray-800 mb-1.5">
+                      {search || activeFilter !== 'all' ? 'No resources found' : 'Your library is empty'}
+                    </h3>
+                    <p className="text-sm text-gray-400 max-w-xs leading-relaxed mb-6">
+                      {search || activeFilter !== 'all'
+                        ? 'Try adjusting your search or filters.'
+                        : "You haven't saved any resources yet. Add your first link, snippet, or document to get started."}
+                    </p>
+                    {!search && activeFilter === 'all' && (
+                      <button
+                        onClick={openAddModal}
+                        className="w-fit px-6 mx-auto flex items-center justify-center gap-2 bg-stash-accent text-white py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover mb-4"
+                      >
+                        +Add Resource
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Drop zone */}
+              <div
+                onClick={openAddModal}
+                className="relative border-2 border-dashed border-gray-200 rounded-xl py-6 flex items-center justify-center text-sm text-gray-400 bg-white hover:border-brand-light hover:text-brand transition-colors cursor-pointer"
+              >
+                <IconPlusCircle />
+                <span className="ml-2">Drop files or paste a link to add a resource</span>
+                <button
+                  onClick={e => { e.stopPropagation(); openAddModal() }}
+                  className="absolute right-4 bottom-4 w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center shadow-lg hover:bg-purple-700 transition-colors"
+                >
+                  <IconLightning />
+                </button>
+              </div>
+
+              {/* Footer: last saved date of newest resource */}
+              {resources.length > 0 && (
+                <p className="text-xs text-center text-blue-300 pb-2">
+                  Last saved · {formatDate(resources[0].savedAt)}
+                </p>
+              )}
+            </div>
           </>
         )}
-
-        {/* 2. RESOURCE DETAILS - Figma Screen 2 */}
-        {view === 'resource' && selectedResource && (
-          <div>
-            <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-stash-muted hover:text-stash-text mb-6">{ICONS.back} Library / {selectedResource.category} / {selectedResource.title}</button>
-            
-            <div className="bg-stash-surface border-stash-border rounded-xl p-8">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h1 className="text-3xl font-bold mb-2">{selectedResource.title}</h1>
-                  <div className="flex gap-2">
-                    <span className="bg-stash-accent/20 text-stash-accent px-3 py-1 rounded-full text-sm">{selectedResource.category}</span>
-                    <span className="bg-stash-elevated px-3 py-1 rounded-full text-sm">{selectedResource.format || 'Article'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-6 mb-8 text-sm">
-                <div><p className="text-stash-subtle mb-1">Category</p><p className="font-medium">{selectedResource.category}</p></div>
-                <div><p className="text-stash-subtle mb-1">Read Time</p><p className="font-medium">{selectedResource.readTime || '5 min'}</p></div>
-                <div><p className="text-stash-subtle mb-1">Format</p><p className="font-medium">{selectedResource.format || 'Article'}</p></div>
-              </div>
-
-              {selectedResource.tags.length > 0 && (
-                <div className="mb-8">
-                  <p className="text-stash-subtle text-sm mb-2">Tags</p>
-                  <div className="flex gap-2">{selectedResource.tags.map(t => <span key={t} className="bg-stash-tag text-stash-tag-text px-3 py-1 rounded-full text-sm">#{t}</span>)}</div>
-                </div>
-              )}
-
-              <div className="prose prose-invert max-w-none text-stash-text leading-relaxed mb-8 whitespace-pre-wrap">
-                {selectedResource.text}
-              </div>
-
-              <div className="space-y-3">
-                {selectedResource.url && <a href={selectedResource.url} target="_blank" rel="noreferrer" className="w-full bg-stash-accent text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-stash-accent-hover">{ICONS.external} Open Original</a>}
-                <div className="flex gap-3">
-                  <button onClick={() => setShowSavePopup(true)} className="flex-1 bg-stash-elevated border-stash-border py-2.5 rounded-lg flex items-center justify-center gap-2 hover:bg-stash-border">{ICONS.edit} Edit</button>
-                  <button onClick={() => deleteResource(selectedResource.id)} className="flex-1 border-red-500/30 text-red-400 py-2.5 rounded-lg flex items-center justify-center gap-2 hover:bg-red-500/10">{ICONS.trash} Delete Resource</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 4. CATEGORY MANAGEMENT - Figma Screen 4 */}
-        {view === 'categories' && (
-          <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Categories</h2>
-              <button onClick={() => { const name = prompt('New category name'); if(name) addCategory(name) }} className="bg-stash-accent text-white px-4 py-2 rounded-lg font-medium hover:bg-stash-accent-hover">+ New Category</button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {categories.map(c => (
-                <div key={c} className="bg-stash-surface border-stash-border rounded-xl p-5">
-                  <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-semibold">{c}</h3>
-                    {c !== 'Design' && <button onClick={() => deleteCategory(c)} className="text-red-400 text-sm">{ICONS.trash}</button>}
-                  </div>
-                  <p className="text-3xl font-bold mb-1">{resources.filter(r => r.category === c).length}</p>
-                  <p className="text-stash-muted text-sm">Resources</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </main>
-
-      {/* 5. SAVE RESOURCE POPUP - Figma Screen 5 */}
-      {showSavePopup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowSavePopup(false)}>
-          <div className="bg-stash-surface border-stash-border rounded-2xl p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-semibold mb-5">Add New Resource</h2>
-            
-            {/* Type Tabs */}
-            <div className="grid grid-cols-3 gap-2 mb-5">
-              {(['url', 'text', 'image'] as ResourceType[]).map(t => (
-                <button key={t} onClick={() => setForm({...form, type: t})} className={`py-3 rounded-lg border transition-colors ${form.type === t? 'bg-stash-accent border-stash-accent text-white' : 'bg-stash-elevated border-stash-border hover:bg-stash-border'}`}>
-                  {t === 'url'? '🔗 URL' : t === 'text'? '📝 Snippet' : '🖼️ Image'}
-                </button>
-              ))}
-            </div>
-
-            <form onSubmit={saveResource} className="space-y-4">
-              <div><label className="text-sm text-stash-muted mb-1.5 block">Resource Title</label><input required value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5" /></div>
-              
-              {form.type === 'url' && <div><label className="text-sm text-stash-muted mb-1.5 block">Resource URL</label><input required placeholder="https://example.com" value={form.url} onChange={e => setForm({...form, url: e.target.value})} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5" /></div>}
-              {form.type === 'text' && <div><label className="text-sm text-stash-muted mb-1.5 block">Text Content</label><textarea required placeholder="Paste your text snippet here..." value={form.text} onChange={e => setForm({...form, text: e.target.value})} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5 h-32" /></div>}
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-sm text-stash-muted mb-1.5 block">Category</label>
-                  <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5">{categories.map(c => <option key={c}>{c}</option>)}</select>
-                </div>
-                <div><label className="text-sm text-stash-muted mb-1.5 block">Tags</label><input placeholder="design, ui" value={form.tags} onChange={e => setForm({...form, tags: e.target.value})} className="w-full bg-stash-elevated border-stash-border rounded-lg px-4 py-2.5" /></div>
-              </div>
-              
-              <div className="flex gap-3 pt-2">
-                <button className="flex-1 bg-stash-accent text-white py-2.5 rounded-lg font-medium hover:bg-stash-accent-hover">Save Resource</button>
-                <button type="button" onClick={() => setShowSavePopup(false)} className="px-6 bg-stash-elevated border-stash-border rounded-lg hover:bg-stash-border">Cancel</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
