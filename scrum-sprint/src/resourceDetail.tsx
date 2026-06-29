@@ -189,7 +189,7 @@ export default function ResourceDetail({ resource, onBack, onEdit, onDelete }: P
                 href={resource.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full bg-brand hover:bg-brand-hover text-white font-medium py-3 rounded-xl transition-colors"
+                className="flex items-center justify-center gap-2 w-full bg-stash-accent hover:bg-brand-hover text-white font-medium py-3 rounded-xl transition-colors"
               >
                 <IconExternalLink />
                 Open Original
