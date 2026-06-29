@@ -218,7 +218,7 @@ export default function AddResourceModal({ categories, editingResource, onSave, 
             type="submit"
             form="resource-form"
             disabled={saving}
-            className="w-fit group flex items-center gap-2 bg-brand hover:bg-brand-hover text-white bg-blue-800 text-sm font-semibold px-6 py-2.5 rounded-lg transition-colors disabled:opacity-50"
+            className="w-fit group flex items-center gap-2 bg-brand hover:bg-brand-hover text-white bg-stash-accent text-sm font-semibold px-6 py-2.5 rounded-lg transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving…' : isEditing ? 'Update Resource' : 'Save Resource'}
             {!saving && <IconSave className="text-white transition-colors group-hover:text-blue-100" />}
