@@ -73,7 +73,7 @@ input,
 textarea,
 select,
 button {
-  @apply text-sm;
+  font-size: 0.875rem;
 }
 
 @layer utilities {
@@ -91,5 +91,49 @@ button {
     line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+}
+
+@media screen and (max-width: 414px) {
+  body {
+    font-size: 14px;
+  }
+
+  .stats-stack {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-sidebar {
+    width: 100%;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .app-main {
+    min-height: 0;
+  }
+
+  .phone-stack {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .phone-pad {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .phone-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-full {
+    width: 100%;
   }
 }

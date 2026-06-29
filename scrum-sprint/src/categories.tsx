@@ -49,7 +49,7 @@ function StatCard({ label, value, sub, subColor = 'text-gray-500' }: {
   label: string; value: React.ReactNode; sub?: string; subColor?: string
 }) {
   return (
-    <div className="flex-1 bg-white rounded-xl border border-gray-200 px-5 py-4">
+    <div className="min-w-0 flex-1 bg-white rounded-xl border border-gray-200 px-5 py-4">
       <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">{label}</p>
       <div className="text-2xl font-bold text-gray-900 leading-tight">{value}</div>
       {sub && <p className={`text-xs mt-1 ${subColor}`}>{sub}</p>}
@@ -76,6 +76,7 @@ export default function Categories({
   const [editingName, setEditingName] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [newCatName, setNewCatName] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const newCatInputRef = useRef<HTMLInputElement>(null)
 
@@ -90,6 +91,10 @@ export default function Categories({
       return count > best.count ? { name: c, count } : best
     },
     { name: categories[0] ?? '—', count: 0 },
+  )
+
+  const filteredCategories = categories.filter(c =>
+    c.toLowerCase().includes(searchQuery.trim().toLowerCase()),
   )
 
   async function handleRename(oldName: string) {
@@ -121,7 +126,12 @@ export default function Categories({
       <header className="flex items-center gap-4 px-6 py-4 bg-white border-b border-gray-200">
         <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand-light transition-all">
           <IconSearch />
-          <input className="bg-transparent outline-none flex-1 text-gray-700 placeholder:text-gray-400 text-sm" placeholder="Search categories..." />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-transparent outline-none flex-1 text-gray-700 placeholder:text-gray-400 text-sm"
+            placeholder="Search categories..."
+          />
         </div>
         <button className="text-gray-400 hover:text-gray-700 transition-colors p-1"><IconBell /></button>
       </header>
@@ -135,7 +145,7 @@ export default function Categories({
           </div>
           <button
             onClick={focusNewCatInput}
-            className="flex items-center gap-2 bg-brand hover:bg-brand-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-stash-accent hover:bg-stash-accent-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
           >
             <IconPlus />
             Create New Category
@@ -143,7 +153,7 @@ export default function Categories({
         </div>
 
         {/* Stats */}
-        <div className="flex gap-4">
+        <div className="stats-stack flex gap-4">
           <StatCard
             label="Total Categories"
             value={<span>{categories.length}</span>}
@@ -162,12 +172,17 @@ export default function Categories({
         </div>
 
         {/* Category grid */}
-        <div className="grid grid-cols-2 gap-4">
-          {categories.map(c => {
-            const count = resources.filter(r => r.category === c).length
-            const isEditing = editingName === c
+        {filteredCategories.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+            No categories match your search.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {filteredCategories.map(c => {
+              const count = resources.filter(r => r.category === c).length
+              const isEditing = editingName === c
 
-            return (
+              return (
               <div
                 key={c}
                 className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center gap-4 group hover:border-gray-300 transition-colors"
@@ -217,8 +232,9 @@ export default function Categories({
                 )}
               </div>
             )
-          })}
-        </div>
+            })}
+          </div>
+        )}
 
         {/* Add new category */}
         <form onSubmit={handleAdd} className="flex gap-3">
